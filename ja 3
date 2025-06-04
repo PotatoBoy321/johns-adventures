@@ -1,0 +1,281 @@
+import pygame
+import sys
+import random
+
+# Initialize Pygame
+pygame.init()
+
+# Screen setup
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Platformer with Waves, Platforms, Enemies, and Effects")
+
+# Clock
+clock = pygame.time.Clock()
+FPS = 60
+
+# Colors
+GREEN      = (0, 255, 0)
+RED        = (255, 0, 0)
+YELLOW     = (255, 230, 0)
+BLACK      = (0, 0, 0)
+WHITE      = (255, 255, 255)
+CLOUD_COLOR = (245, 245, 245)
+
+# Helper to load images with error checking
+def load_image(path, size=None):
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        if size:
+            img = pygame.transform.scale(img, size)
+        return img
+    except Exception as e:
+        print(f"Error loading image at {path!r}: {e}")
+        return None
+
+# ——— Load Background —————————————————————————————————————————————————————
+# Save https://wallpapercave.com/wp/wp7619435.jpg as "background.jpg"
+background_img = load_image("background.jpg", (WIDTH, HEIGHT))
+if not background_img:
+    background_img = pygame.Surface((WIDTH, HEIGHT))
+    background_img.fill((50, 50, 100))
+
+# ——— Load Player Sprites —————————————————————————————————————————————————————
+player_img      = load_image(r"ex'\Boy with Slingshot\Idle\idle4.png",         (50, 50))
+player_img_walk = load_image(r"ex'\Boy with Slingshot\Walk\Walk1.png",          (50, 50))
+player_img_jump = load_image(r"ex'\Boy with Slingshot\Jump\Jump without attack.png", (50, 50))
+
+if not player_img:
+    player_img = pygame.Surface((50, 50)); player_img.fill(YELLOW)
+if not player_img_walk:
+    player_img_walk = pygame.Surface((50, 50)); player_img_walk.fill((200, 200, 0))
+if not player_img_jump:
+    player_img_jump = pygame.Surface((50, 50)); player_img_jump.fill((255, 150, 0))
+
+# ——— Game Variables ——————————————————————————————————————————————————————
+gravity = 1
+jump_strength = -20
+bullets = []
+
+# ——— Platforms ——————————————————————————————————————————————————————————
+platforms = [
+    pygame.Rect(0,   550, 800, 50),   # ground
+    pygame.Rect(150, 450, 200, 20),
+    pygame.Rect(450, 350, 200, 20),
+    pygame.Rect(100, 250, 150, 20),
+    pygame.Rect(400, 150, 250, 20)
+]
+
+# ——— Cloud Class ————————————————————————————————————————————————————————
+class Cloud:
+    def __init__(self, x, y, scale, speed):
+        self.x = x; self.y = y
+        self.scale = scale; self.speed = speed
+        r = int(20 * scale)
+        self.circles = [
+            (-r,           0, int(r * 0.9)),
+            (0,          -r // 2, int(r * 1.1)),
+            (r,            0, int(r * 0.9)),
+            (0,           r // 2, int(r * 0.8)),
+        ]
+
+    def update(self):
+        self.x -= self.speed
+        rightmost = self.x + int(60 * self.scale)
+        if rightmost < 0:
+            self.x = WIDTH + int(60 * self.scale)
+
+    def draw(self, surface):
+        for dx, dy, rad in self.circles:
+            cx = int(self.x + dx); cy = int(self.y + dy)
+            pygame.draw.circle(surface, CLOUD_COLOR, (cx, cy), rad)
+
+clouds = [
+    Cloud(100, 100, scale=1.0, speed=0.5),
+    Cloud(400,  80, scale=1.2, speed=0.3),
+    Cloud(700, 120, scale=0.8, speed=0.7),
+    Cloud(600,  50, scale=1.5, speed=0.2)
+]
+
+# ——— Enemy Class with Stone Face or Fallback ——————————————————————————————————
+class Enemy(pygame.sprite.Sprite):
+    def __init__(self, x, y, speed):
+        super().__init__()
+        face_img = load_image(r"ex'\Boy with Slingshot\stone.png", (40, 40))
+        if face_img:
+            self.image = face_img
+        else:
+            self.image = pygame.Surface((40, 40)); self.image.fill(YELLOW)
+            pygame.draw.circle(self.image, BLACK, (10, 12), 3)
+            pygame.draw.circle(self.image, BLACK, (30, 12), 3)
+            pygame.draw.rect(self.image, BLACK, (12, 25, 16, 4))
+        self.rect = self.image.get_rect(topleft=(x, y))
+        self.direction = random.choice([-1, 1])
+        self.speed = speed
+
+    def update(self):
+        self.rect.x += self.direction * self.speed
+        if self.rect.left < 0 or self.rect.right > WIDTH:
+            self.direction *= -1
+
+# ——— Player Class with Dying State and Side Borders ——————————————————————————
+class Player(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.orig_image = player_img
+        self.image = self.orig_image
+        self.rect = self.image.get_rect(center=(200, 150))
+        self.vel_y = 0; self.on_ground = False; self.facing_right = True
+        self.state = "alive"; self.death_timer = 0
+
+    def start_dying(self):
+        if self.state == "alive":
+            self.state = "dying"; self.death_timer = 20
+
+    def update(self, keys):
+        if self.state == "dying":
+            self.handle_death_animation()
+            return
+
+        # Horizontal movement
+        if keys[pygame.K_d]:
+            self.image = player_img_walk
+            self.rect.x += 5; self.facing_right = True
+        elif keys[pygame.K_a]:
+            self.image = player_img_walk
+            self.rect.x -= 5; self.facing_right = False
+        else:
+            self.image = player_img
+
+        # Enforce side borders
+        if self.rect.left < 0: self.rect.left = 0
+        if self.rect.right > WIDTH: self.rect.right = WIDTH
+
+        # Jump
+        if keys[pygame.K_w] and self.on_ground:
+            self.image = player_img_jump
+            self.vel_y = jump_strength; self.on_ground = False
+
+        # Gravity
+        self.vel_y += gravity
+        self.rect.y += self.vel_y
+
+        # Platform collision
+        self.on_ground = False
+        for platform in platforms:
+            if self.rect.colliderect(platform) and self.vel_y > 0:
+                self.rect.bottom = platform.top
+                self.vel_y = 0
+                self.on_ground = True
+
+    def handle_death_animation(self):
+        if self.death_timer > 0:
+            factor = self.death_timer / 20.0
+            new_w = max(1, int(self.orig_image.get_width() * factor))
+            new_h = max(1, int(self.orig_image.get_height() * factor))
+            scaled = pygame.transform.scale(self.orig_image, (new_w, new_h))
+            center_x, center_y = self.rect.center
+            self.image = scaled
+            self.rect = self.image.get_rect(center=(center_x, center_y))
+            self.death_timer -= 1
+        else:
+            pygame.quit(); sys.exit()
+
+# ——— Wave & Enemy Management ———————————————————————————————————————————————
+wave_number = 1
+enemies = pygame.sprite.Group()
+
+def spawn_wave(n):
+    """
+    Spawn 'n' enemies with increasing speed.
+    Positions are random among available platform tops or ground.
+    """
+    for i in range(n):
+        speed = 2 + (wave_number - 1) * 0.5  # gradually increase speed per wave
+        # Randomly choose a platform or ground Y
+        choice = random.choice(platforms)
+        x = random.randint(0, WIDTH - 40)
+        y = choice.top - 40
+        enemies.add(Enemy(x, y, speed))
+
+# Initially spawn wave 1
+spawn_wave(wave_number)
+
+# ——— Create Player & Groups —————————————————————————————————————————————
+player = Player()
+all_sprites = pygame.sprite.Group(player)
+
+# ——— Main Game Loop ——————————————————————————————————————————————————————
+running = True
+while running:
+    clock.tick(FPS)
+    keys = pygame.key.get_pressed()
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+            bullet_speed = 10 if player.facing_right else -10
+            rect = pygame.Rect(player.rect.centerx, player.rect.centery, 10, 5)
+            bullets.append({"rect": rect, "speed": bullet_speed})
+
+    # Update clouds, sprites, and enemies
+    for cloud in clouds:
+        cloud.update()
+    all_sprites.update(keys)
+    enemies.update()
+
+    # If all enemies are defeated, advance to next wave
+    if len(enemies) == 0 and player.state == "alive":
+        wave_number += 1
+        spawn_wave(wave_number)
+
+    # Player–enemy collision
+    if player.state == "alive":
+        for enemy in enemies:
+            if player.rect.colliderect(enemy.rect):
+                player.start_dying()
+                break
+
+    # Move bullets and check bullet–enemy collisions
+    for bullet in bullets[:]:
+        bullet["rect"].x += bullet["speed"]
+        for enemy in enemies:
+            if bullet["rect"].colliderect(enemy.rect):
+                enemies.remove(enemy)
+                bullets.remove(bullet)
+                break
+        if bullet["rect"].right < 0 or bullet["rect"].left > WIDTH:
+            if bullet in bullets:
+                bullets.remove(bullet)
+
+    # Draw background
+    screen.blit(background_img, (0, 0))
+
+    # Draw clouds
+    for cloud in clouds:
+        cloud.draw(screen)
+
+    # Draw platforms
+    for platform in platforms:
+        pygame.draw.rect(screen, GREEN, platform)
+
+    # Draw player (including dying shrink)
+    all_sprites.draw(screen)
+
+    # Draw bullets
+    for bullet in bullets:
+        pygame.draw.rect(screen, RED, bullet["rect"])
+
+    # Draw enemies
+    enemies.draw(screen)
+
+    # Optional: display wave number in top-left corner
+    font = pygame.font.SysFont(None, 36)
+    wave_text = font.render(f"Wave: {wave_number}", True, WHITE)
+    screen.blit(wave_text, (10, 10))
+
+    pygame.display.update()
+
+pygame.quit()
+sys.exit()
