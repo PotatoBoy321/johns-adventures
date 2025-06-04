@@ -1,0 +1,122 @@
+import pygame
+import sys
+
+# Initialize Pygame
+pygame.init()
+
+# Screen setup
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Mario Platformer with Shooting")
+
+# Clock
+clock = pygame.time.Clock()
+FPS = 60
+
+# Colors
+WHITE = (255, 255, 255)
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
+
+# Load player sprites
+player_img = pygame.image.load("ex'\Boy with Slingshot\Idle\idle4.png").convert_alpha()
+player_img = pygame.transform.scale(player_img, (50, 50))
+player_img_walk = pygame.image.load("ex'\Boy with Slingshot\Walk\Walk1.png").convert_alpha()
+player_img_walk = pygame.transform.scale(player_img_walk, (50, 50))
+player_img_jump = pygame.image.load("ex'\Boy with Slingshot\Jump\Jump without attack.png").convert_alpha()
+player_img_jump = pygame.transform.scale(player_img_jump, (50, 50))
+
+# Game variables
+gravity = 1
+jump_strength = -20
+bullets = []
+
+# Platforms
+platforms = [pygame.Rect(0, 550, 800, 50), pygame.Rect(300, 400, 200, 20)]
+
+# Player class
+class Player(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.image = player_img
+        self.rect = self.image.get_rect(center=(200, 150))
+        self.vel_y = 0
+        self.on_ground = False
+        self.facing_right = True
+
+    def update(self, keys):
+        if keys[pygame.K_d]:
+            self.image = player_img_walk
+            self.rect.x += 5
+            self.facing_right = True
+        elif keys[pygame.K_a]:
+            self.image = player_img_walk
+            self.rect.x -= 5
+            self.facing_right = False
+        else:
+            self.image = player_img
+
+        if keys[pygame.K_w] and self.on_ground:
+            self.image = player_img_jump
+            self.vel_y = jump_strength
+            self.on_ground = False
+
+        # Gravity
+        self.vel_y += gravity
+        self.rect.y += self.vel_y
+
+        # Platform collision
+        self.on_ground = False
+        for platform in platforms:
+            if self.rect.colliderect(platform) and self.vel_y > 0:
+                self.rect.bottom = platform.top
+                self.vel_y = 0
+                self.on_ground = True
+
+# Create player and group
+player = Player()
+all_sprites = pygame.sprite.Group(player)
+
+# Main game loop
+running = True
+while running:
+    clock.tick(FPS)
+    keys = pygame.key.get_pressed()
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+        # Shooting
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                bullet_speed = 10 if player.facing_right else -10
+                bullet = {
+                    "rect": pygame.Rect(player.rect.centerx, player.rect.centery, 10, 5),
+                    "speed": bullet_speed
+                }
+                bullets.append(bullet)
+
+    # Update
+    all_sprites.update(keys)
+
+    # Move bullets
+    for bullet in bullets[:]:
+        bullet["rect"].x += bullet["speed"]
+        if bullet["rect"].right < 0 or bullet["rect"].left > WIDTH:
+            bullets.remove(bullet)
+
+    # Draw
+    screen.fill(WHITE)
+    for platform in platforms:
+        pygame.draw.rect(screen, GREEN, platform)
+
+    screen.blit(player.image, player.rect.topleft)
+
+    for bullet in bullets:
+        pygame.draw.rect(screen, RED, bullet["rect"])
+
+    pygame.display.update()
+
+pygame.quit()
+sys.exit()
