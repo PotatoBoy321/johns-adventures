@@ -1,0 +1,161 @@
+import pygame
+import sys
+import random
+
+# Initialize
+pygame.init()
+pygame.mixer.init()
+
+# Music
+pygame.mixer.music.load("SlaveQ_Dr_Dre_style_-_SlaveQ.mp3")
+pygame.mixer.music.play(-1)
+
+# Screen
+WIDTH, HEIGHT = 800, 600
+WORLD_WIDTH = 25000
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Side Scroller with Shooting and Cooldown")
+
+# Clock
+clock = pygame.time.Clock()
+FPS = 60
+
+# Colors
+WHITE = (255, 255, 255)
+GRAY = (128, 128, 128)
+YELLOW = (255, 255, 0)
+
+# Background
+background_image = pygame.image.load("SpriteFolder/craiyon_113818_Pixel_art_night_city_background__street_fighter_style__long__high_quality.png").convert()
+background_image = pygame.transform.scale(background_image, (WORLD_WIDTH, HEIGHT))
+
+# Animations
+frame_delay = 8
+animation = {
+    "idle": [pygame.transform.scale(pygame.image.load(f"SpriteFolder/Boy with Slingshot/Idle/idle{i}.png").convert_alpha(), (50, 50)) for i in range(1, 5)],
+    "walk": [pygame.transform.scale(pygame.image.load(f"SpriteFolder/Boy with Slingshot/Walk/Walk{i}.png").convert_alpha(), (50, 50)) for i in range(1, 5)],
+    "jump": [pygame.transform.scale(pygame.image.load("SpriteFolder/Boy with Slingshot/Jump/Jump without attack.png").convert_alpha(), (50, 50))],
+    "attack": [pygame.transform.scale(pygame.image.load(f"SpriteFolder/Boy with Slingshot/Stay Attack/StayAttack{i}.png").convert_alpha(), (50, 50)) for i in range(1, 5)],
+}
+
+# Platforms
+platforms = [pygame.Rect(0, 550, WORLD_WIDTH, 50)]
+for _ in range(130):
+    x = random.randint(0, WORLD_WIDTH - 120)
+    y = random.randint(150, 500)
+    platforms.append(pygame.Rect(x, y, random.randint(80, 160), 20))
+
+# Player
+class Player(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.action = "idle"
+        self.frame_index = 0
+        self.frame_timer = 0
+        self.image = animation[self.action][self.frame_index]
+        self.rect = self.image.get_rect(center=(200, 400))
+        self.vel_y = 0
+        self.on_ground = False
+        self.attacking = False
+        self.facing_right = True
+
+    def update(self, keys):
+        prev_action = self.action
+        dx = 0
+
+        if keys[pygame.K_a]:
+            dx = -5
+            self.facing_right = False
+            self.action = "walk"
+        elif keys[pygame.K_d]:
+            dx = 5
+            self.facing_right = True
+            self.action = "walk"
+        elif keys[pygame.K_w] and self.on_ground:
+            self.vel_y = jump_strength
+            self.on_ground = False
+            self.action = "jump"
+        elif self.attacking:
+            self.action = "attack"
+        else:
+            self.action = "idle"
+
+        self.rect.x += dx
+        self.vel_y += gravity
+        self.rect.y += self.vel_y
+
+        self.rect.x = max(0, min(WORLD_WIDTH - self.rect.width, self.rect.x))
+
+        self.on_ground = False
+        for platform in platforms:
+            if self.rect.colliderect(platform) and self.vel_y > 0:
+                self.rect.bottom = platform.top
+                self.vel_y = 0
+                self.on_ground = True
+
+        self.frame_timer += 1
+        if self.frame_timer >= frame_delay:
+            self.frame_timer = 0
+            self.frame_index = (self.frame_index + 1) % len(animation[self.action])
+            if self.action == "attack" and self.frame_index == 0:
+                self.attacking = False
+
+        if self.action != prev_action:
+            self.frame_index = 0
+
+        self.image = animation[self.action][self.frame_index]
+
+# Values
+gravity = 1
+jump_strength = -20
+player = Player()
+all_sprites = pygame.sprite.Group(player)
+
+# Bullets
+bullets = []
+bullet_speed = 10
+shoot_cooldown = 300
+last_shot_time = 0
+
+def draw_world(offset_x):
+    screen.blit(background_image, (-offset_x, 0))
+    for plat in platforms:
+        rect = pygame.Rect(plat.x - offset_x, plat.y, plat.width, plat.height)
+        pygame.draw.rect(screen, GRAY, rect)
+    screen.blit(player.image, (player.rect.x - offset_x, player.rect.y))
+    for bullet in bullets:
+        pygame.draw.rect(screen, YELLOW, pygame.Rect(bullet["rect"].x - offset_x, bullet["rect"].y, bullet["rect"].width, bullet["rect"].height))
+
+# Game loop
+running = True
+while running:
+    keys = pygame.key.get_pressed()
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            current_time = pygame.time.get_ticks()
+            if current_time - last_shot_time > shoot_cooldown:
+                player.attacking = True
+                direction = 1 if player.facing_right else -1
+                bullet_rect = pygame.Rect(player.rect.centerx, player.rect.centery, 10, 4)
+                bullets.append({"rect": bullet_rect, "speed": bullet_speed * direction})
+                last_shot_time = current_time
+
+    all_sprites.update(keys)
+
+    for bullet in bullets[:]:
+        bullet["rect"].x += bullet["speed"]
+        if bullet["rect"].right < 0 or bullet["rect"].left > WORLD_WIDTH:
+            bullets.remove(bullet)
+
+    camera_offset = player.rect.centerx - WIDTH // 2
+    camera_offset = max(0, min(camera_offset, WORLD_WIDTH - WIDTH))
+
+    screen.fill(WHITE)
+    draw_world(camera_offset)
+    pygame.display.update()
+    clock.tick(FPS)
+
+pygame.quit()
+sys.exit()
