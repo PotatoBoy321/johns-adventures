@@ -1,0 +1,125 @@
+import pygame
+import random
+import sys
+
+# Initialize
+pygame.init()
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Space Shooter")
+clock = pygame.time.Clock()
+FPS = 60
+
+# Colors
+WHITE = (255, 255, 255)
+RED   = (255, 0, 0)
+BLACK = (0, 0, 0)
+
+# Load assets or use fallbacks
+def load_img(path, size=None):
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        return pygame.transform.scale(img, size) if size else img
+    except:
+        return None
+
+player_img = load_img("spaceship.png", (50, 50))
+enemy_img  = load_img("enemy.png", (40, 40))
+laser_img  = load_img("laser.png", (5, 20))
+
+if not player_img:
+    player_img = pygame.Surface((50, 50))
+    pygame.draw.polygon(player_img, WHITE, [(25, 0), (0, 50), (50, 50)])
+
+if not enemy_img:
+    enemy_img = pygame.Surface((40, 40))
+    pygame.draw.rect(enemy_img, RED, (0, 0, 40, 40))
+
+if not laser_img:
+    laser_img = pygame.Surface((5, 20))
+    laser_img.fill(WHITE)
+
+# Player
+player = pygame.Rect(WIDTH // 2, HEIGHT - 60, 50, 50)
+lasers = []
+
+# Enemies
+enemies = []
+enemy_spawn_timer = 0
+
+score = 0
+font = pygame.font.SysFont(None, 32)
+game_over = False
+
+# Main loop
+running = True
+while running:
+    clock.tick(FPS)
+    screen.fill(BLACK)
+    keys = pygame.key.get_pressed()
+
+    # Events
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT or keys[pygame.K_ESCAPE]:
+            running = False
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            lasers.append(pygame.Rect(player.centerx - 2, player.top, 5, 20))
+
+    # Movement
+    if not game_over:
+        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+            player.x -= 5
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+            player.x += 5
+        if keys[pygame.K_UP] or keys[pygame.K_w]:
+            player.y -= 5
+        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+            player.y += 5
+
+        player.clamp_ip(screen.get_rect())
+
+    # Lasers
+    for laser in lasers[:]:
+        laser.y -= 10
+        if laser.bottom < 0:
+            lasers.remove(laser)
+
+    # Enemies
+    enemy_spawn_timer += 1
+    if enemy_spawn_timer > 30 and not game_over:
+        enemy_spawn_timer = 0
+        x = random.randint(0, WIDTH - 40)
+        enemies.append(pygame.Rect(x, -40, 40, 40))
+
+    for enemy in enemies[:]:
+        enemy.y += 4
+        if enemy.top > HEIGHT:
+            enemies.remove(enemy)
+        if player.colliderect(enemy):
+            game_over = True
+        for laser in lasers:
+            if laser.colliderect(enemy):
+                enemies.remove(enemy)
+                if laser in lasers:
+                    lasers.remove(laser)
+                score += 1
+                break
+
+    # Draw
+    screen.blit(player_img, player)
+    for laser in lasers:
+        screen.blit(laser_img, laser)
+    for enemy in enemies:
+        screen.blit(enemy_img, enemy)
+
+    score_text = font.render(f"Score: {score}", True, WHITE)
+    screen.blit(score_text, (10, 10))
+
+    if game_over:
+        text = font.render("Game Over! Press ESC to quit.", True, RED)
+        screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2))
+
+    pygame.display.flip()
+
+pygame.quit()
+sys.exit()
