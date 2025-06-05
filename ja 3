@@ -1,4 +1,5 @@
-# [Full working game with player disappears on death and can't move]
+
+# [Full working game with grenade + cheat key 'K' to skip to wave 5]
 import pygame
 import sys
 import random
@@ -9,7 +10,9 @@ WIDTH, HEIGHT = 800, 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Platformer: Rescue the Princess at Wave 5")
 clock = pygame.time.Clock()
+
 FPS = 60
+WORLD_WIDTH = 1600
 
 GREEN       = (0, 255, 0)
 RED         = (255, 0, 0)
@@ -33,11 +36,15 @@ background_img = load_image("background.jpg", (1600, HEIGHT))
 if not background_img:
     background_img = pygame.Surface((1600, HEIGHT))
     background_img.fill((50, 50, 100))
-WORLD_WIDTH = 1600
+
+
 
 player_img      = load_image(r"ex'\Boy with Slingshot\Idle\idle4.png",         (50, 50))
 player_img_walk = load_image(r"ex'\Boy with Slingshot\Walk\Walk1.png",         (50, 50))
-player_img_jump = load_image(r"ex'\Boy with Slingshot\Jump\Jump without attack.png", (50, 50))
+player_img_walk2 = load_image(r"ex'\Boy with Slingshot\Walk\Walk2.png",         (50, 50))
+player_img_walk3 = load_image(r"ex'\Boy with Slingshot\Walk\Walk3.png",         (50, 50))
+player_img_walk4 = load_image(r"ex'\Boy with Slingshot\Walk\Walk4.png",         (50, 50))
+player_img_jump = load_image(r"ex'\Boy with Slingshot\Jump Attack\JumpAttack1.png", (50, 50))
 
 if not player_img:
     player_img = pygame.Surface((50, 50)); player_img.fill(YELLOW)
@@ -46,14 +53,21 @@ if not player_img_walk:
 if not player_img_jump:
     player_img_jump = pygame.Surface((50, 50)); player_img_jump.fill((255, 150, 0))
 
-princess_sheet = load_image("/mnt/data/64eb51af-dc8b-48ae-8d6d-f076fc40def5.png", (80, 80))
+princess_sheet = load_image("princess.png", (80, 80))
 if not princess_sheet:
     princess_sheet = pygame.Surface((80, 80))
     princess_sheet.fill((255, 100, 200))
 
+    castle_img = load_image("castle.png", (200, 200))
+if not castle_img:
+    castle_img = pygame.Surface((200, 200))
+    castle_img.fill((100, 100, 255))
+
 gravity = 1
 jump_strength = -20
 bullets = []
+grenades = []
+grenade_radius = 60
 
 platforms = [
     pygame.Rect(0,    550, 800, 50),
@@ -120,14 +134,8 @@ class Enemy(pygame.sprite.Sprite):
                 self.rect.x += self.speed
             elif self.rect.x > player.rect.x:
                 self.rect.x -= self.speed
-        if self.rect.left < 0:
-            self.rect.left = 0
-        if self.rect.right > WORLD_WIDTH:
-            self.rect.right = WORLD_WIDTH
-
         self.vel_y += gravity
         self.rect.y += self.vel_y
-
         self.on_ground = False
         for platform in platforms:
             if self.rect.colliderect(platform) and self.vel_y > 0:
@@ -152,7 +160,7 @@ class Player(pygame.sprite.Sprite):
         self.death_timer = 0
         self.game_over_displayed = False
         self.game_over_timer = 180
-
+        self.grenade_cooldown = 0
     def start_dying(self):
         if self.state == "alive":
             self.state = "dying"
@@ -164,8 +172,14 @@ class Player(pygame.sprite.Sprite):
         if self.state == "dying":
             self.handle_death_animation()
             return
+
         if keys[pygame.K_d]:
-            self.image = player_img_walk
+            for i in range (1):
+                self.image = player_img_walk  
+                self.image = player_img_walk2 
+                self.image = player_img_walk3
+                self.image = player_img_walk4  
+
             self.rect.x += 5
             self.facing_right = True
         elif keys[pygame.K_a]:
@@ -196,6 +210,9 @@ class Player(pygame.sprite.Sprite):
                 self.on_ground = True
                 break
 
+        if self.grenade_cooldown > 0:
+            self.grenade_cooldown -= 1
+
     def handle_death_animation(self):
         if self.death_timer > 0:
             factor = self.death_timer / 20.0
@@ -218,7 +235,7 @@ class Player(pygame.sprite.Sprite):
     def draw_game_over(self, surface):
         if self.game_over_displayed:
             font = pygame.font.SysFont(None, 32)
-            lines = ["Skill issue!", "good boy", "Press ESC to quit or wait a moment."]
+            lines = ["you lost!", "good boy", "Press ESC to quit or wait a moment."]
             y = HEIGHT // 3
             for line in lines:
                 text = font.render(line, True, RED)
@@ -240,6 +257,7 @@ wave_number = 1
 enemies = pygame.sprite.Group()
 princess_active = False
 princess = None
+cheat_used = False  # <== TRACK CHEAT
 
 def spawn_wave(n):
     global princess_active, princess
@@ -253,6 +271,8 @@ def spawn_wave(n):
     elif n == 5:
         princess_active = True
         princess = Princess(1500, 550)
+       
+       
 
 spawn_wave(wave_number)
 player = Player()
@@ -268,6 +288,22 @@ while running:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and player.state == "alive":
             bullet_speed = 10 if player.facing_right else -10
             bullets.append({"rect": pygame.Rect(player.rect.centerx, player.rect.centery, 10, 5), "speed": bullet_speed})
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_e and player.grenade_cooldown == 0 and player.state == "alive":
+            grenade_speed = 7 if player.facing_right else -7
+            grenades.append({
+                "rect": pygame.Rect(player.rect.centerx, player.rect.centery, 12, 12),
+                "vx": grenade_speed,
+                "vy": -10,
+                "timer": 60
+            })
+            player.grenade_cooldown = 90
+
+        # === CHEAT KEY: Press K to skip to Wave 5 ===
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_k:
+            wave_number = 5
+            enemies.empty()
+            spawn_wave(wave_number)
+            cheat_used = True
 
     for cloud in clouds:
         cloud.update()
@@ -298,6 +334,25 @@ while running:
                 if bullet in bullets:
                     bullets.remove(bullet)
 
+    for grenade in grenades[:]:
+        grenade["vy"] += gravity
+        grenade["rect"].x += grenade["vx"]
+        grenade["rect"].y += grenade["vy"]
+        grenade["timer"] -= 1
+
+        hit_ground = False
+        for plat in platforms:
+            if grenade["rect"].colliderect(plat):
+                hit_ground = True
+                break
+
+        if grenade["timer"] <= 0 or hit_ground:
+            explosion_center = grenade["rect"].center
+            for enemy in enemies.copy():
+                if abs(enemy.rect.centerx - explosion_center[1]) < grenade_radius and abs(enemy.rect.centery - explosion_center[1]) < grenade_radius:
+                    enemies.remove(enemy)
+            grenades.remove(grenade)
+
     camera_x = max(0, min(player.rect.centerx - WIDTH // 2, WORLD_WIDTH - WIDTH))
 
     screen.blit(background_img, (-camera_x, 0))
@@ -312,6 +367,8 @@ while running:
         enemy.draw(screen, camera_x)
     for bullet in bullets:
         pygame.draw.rect(screen, RED, pygame.Rect(bullet["rect"].x - camera_x, bullet["rect"].y, 10, 5))
+    for grenade in grenades:
+        pygame.draw.circle(screen, (200, 200, 0), (grenade["rect"].x - camera_x, grenade["rect"].y), 6)
 
     if princess_active:
         princess.draw(screen, camera_x)
@@ -323,6 +380,11 @@ while running:
     font = pygame.font.SysFont(None, 36)
     wave_text = font.render(f"Wave: {wave_number}", True, WHITE)
     screen.blit(wave_text, (10, 10))
+
+    if cheat_used:
+        cheat_font = pygame.font.SysFont(None, 24)
+        cheat_msg = cheat_font.render("Cheat activated: Skipped to Wave 5", True, YELLOW)
+        screen.blit(cheat_msg, (10, 40))
 
     if player.state == "dead":
         player.draw_game_over(screen)
